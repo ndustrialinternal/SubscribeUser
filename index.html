@@ -1,0 +1,729 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Check User Assigner</title>
+  <style>
+    body { 
+      font-family: Arial, sans-serif; 
+      margin: 1rem; 
+      max-width: 900px; 
+      margin: 2rem auto; 
+    }
+    h1 { 
+      text-align: center; 
+      margin-bottom: 2rem; 
+      color: #333;
+    }
+
+    /* Form styling */
+    .form-container {
+      background: #f9f9f9;
+      padding: 2rem;
+      border-radius: 8px;
+      border: 1px solid #ddd;
+    }
+    
+    .form-group {
+      margin-bottom: 1.5rem;
+    }
+    
+    label {
+      display: block;
+      font-weight: bold;
+      margin-bottom: 0.5rem;
+      color: #333;
+    }
+    
+    select, input[type="text"] {
+      width: 100%;
+      padding: 0.75rem;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      font-size: 1rem;
+      box-sizing: border-box;
+    }
+    
+    select:disabled, input:disabled {
+      background-color: #f5f5f5;
+      color: #666;
+    }
+
+    /* Typeahead styling */
+    .typeahead-container {
+      position: relative;
+    }
+    
+    .typeahead-dropdown {
+      position: absolute;
+      top: 100%;
+      left: 0;
+      right: 0;
+      background: white;
+      border: 1px solid #ccc;
+      border-top: none;
+      border-radius: 0 0 4px 4px;
+      max-height: 200px;
+      overflow-y: auto;
+      z-index: 1000;
+      display: none;
+    }
+    
+    .typeahead-item {
+      padding: 0.75rem;
+      cursor: pointer;
+      border-bottom: 1px solid #eee;
+    }
+    
+    .typeahead-item:hover {
+      background-color: #f0f0f0;
+    }
+    
+    .typeahead-item:last-child {
+      border-bottom: none;
+    }
+
+    /* User selector styling */
+    .user-selector {
+      position: relative;
+    }
+    
+    .user-tags {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      margin-top: 0.5rem;
+      min-height: 2rem;
+      padding: 0.5rem;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      background: white;
+    }
+    
+    .user-tag {
+      background: #007bff;
+      color: white;
+      padding: 0.25rem 0.5rem;
+      border-radius: 3px;
+      font-size: 0.9rem;
+      display: flex;
+      align-items: center;
+      gap: 0.25rem;
+    }
+    
+    .user-tag .remove {
+      cursor: pointer;
+      font-weight: bold;
+    }
+
+    /* Submit button */
+    .submit-container {
+      text-align: center;
+      margin-top: 2rem;
+    }
+    
+    button {
+      background: #007bff;
+      color: white;
+      border: none;
+      padding: 1rem 2rem;
+      font-size: 1rem;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    
+    button:hover {
+      background: #0056b3;
+    }
+    
+    button:disabled {
+      background: #ccc;
+      cursor: not-allowed;
+    }
+
+    /* Status messages */
+    .loading, .error, .success { 
+      text-align: center; 
+      margin: 1rem 0; 
+      padding: 1rem;
+      border-radius: 4px;
+    }
+    .loading { 
+      background: #e3f2fd; 
+      color: #1976d2; 
+    }
+    .error { 
+      background: #ffebee; 
+      color: #d32f2f; 
+    }
+    .success { 
+      background: #e8f5e8; 
+      color: #2e7d32; 
+    }
+    
+    .hide { display: none; }
+
+    /* Selected items display */
+    .selected-item {
+      margin-top: 0.5rem;
+      padding: 0.5rem;
+      background: #e8f5e8;
+      border-radius: 4px;
+      font-size: 0.9rem;
+    }
+  </style>
+</head>
+<body>
+  <h1>Check User Assigner</h1>
+
+  <div class="form-container">
+    <!-- Organization selector -->
+    <div class="form-group">
+      <label for="org-select">Organization</label>
+      <select id="org-select">
+        <option value="">Select Organization</option>
+      </select>
+    </div>
+
+    <!-- Facility selector -->
+    <div class="form-group">
+      <label for="facility-select">Facility</label>
+      <select id="facility-select" disabled>
+        <option value="">Select Organization First</option>
+      </select>
+    </div>
+
+    <!-- Check typeahead search -->
+    <div class="form-group">
+      <label for="check-search">Check</label>
+      <div class="typeahead-container">
+        <input type="text" id="check-search" placeholder="Select facility first..." disabled />
+        <div id="check-dropdown" class="typeahead-dropdown"></div>
+      </div>
+      <div id="selected-check" class="selected-item hide"></div>
+    </div>
+
+    <!-- User multi-select -->
+    <div class="form-group">
+      <label for="user-search">Users</label>
+      <div class="user-selector">
+        <div class="typeahead-container">
+          <input type="text" id="user-search" placeholder="Search for users..." disabled />
+          <div id="user-dropdown" class="typeahead-dropdown"></div>
+        </div>
+        <div id="user-tags" class="user-tags"></div>
+      </div>
+    </div>
+
+    <!-- Status messages -->
+    <div id="loading" class="loading hide">Loading...</div>
+    <div id="error" class="error hide"></div>
+    <div id="success" class="success hide"></div>
+
+    <!-- Submit button -->
+    <div class="submit-container">
+      <button id="submit-btn" disabled>Assign Users to Check</button>
+    </div>
+  </div>
+
+  <script>
+  (function(){
+    // Organization to proxy endpoint mapping
+    const ORG_URLS = {
+      "Lineage":   "https://cp-alert-signoff-proxy.onrender.com/lineage",
+      "Demo":      "https://cp-alert-signoff-proxy.onrender.com/demo",
+      "Emergent":  "https://cp-alert-signoff-proxy.onrender.com/emergent",
+      "Americold": "https://cp-alert-signoff-proxy.onrender.com/americold",
+      "US Cold":   "https://cp-alert-signoff-proxy.onrender.com/uscold",
+      "Envision":  "https://cp-alert-signoff-proxy.onrender.com/envision",
+      "WL Gore":   "https://cp-alert-signoff-proxy.onrender.com/wlgore"
+    };
+
+    // DOM references
+    const orgSelect = document.getElementById('org-select');
+    const facilitySelect = document.getElementById('facility-select');
+    const checkSearch = document.getElementById('check-search');
+    const checkDropdown = document.getElementById('check-dropdown');
+    const selectedCheckEl = document.getElementById('selected-check');
+    const userSearch = document.getElementById('user-search');
+    const userDropdown = document.getElementById('user-dropdown');
+    const userTags = document.getElementById('user-tags');
+    const submitBtn = document.getElementById('submit-btn');
+    const loadingEl = document.getElementById('loading');
+    const errorEl = document.getElementById('error');
+    const successEl = document.getElementById('success');
+
+    let selectedOrgUrl = '';
+    let selectedCheck = null;
+    let selectedUsers = [];
+    let facilities = [];
+
+    // Populate organization dropdown
+    Object.keys(ORG_URLS).forEach(function(org){
+      orgSelect.appendChild(new Option(org, org));
+    });
+
+    // Event listeners
+    orgSelect.addEventListener('change', onOrgChange);
+    facilitySelect.addEventListener('change', onFacilityChange);
+    checkSearch.addEventListener('input', debounce(searchChecks, 300));
+    userSearch.addEventListener('input', debounce(searchUsers, 300));
+    submitBtn.addEventListener('click', assignUsersToCheck);
+
+    // Hide dropdowns when clicking outside
+    document.addEventListener('click', function(e) {
+      if (!e.target.closest('.typeahead-container')) {
+        hideAllDropdowns();
+      }
+    });
+
+    // When organization changes
+    async function onOrgChange() {
+      const selectedOrg = orgSelect.value;
+      selectedOrgUrl = ORG_URLS[selectedOrg];
+      
+      // Reset everything
+      resetForm();
+      
+      if (!selectedOrg) {
+        disableAll();
+        return;
+      }
+
+      hideMessages();
+      
+      // Load facilities and enable user search
+      await loadFacilities();
+      enableUserSearch();
+    }
+
+    // When facility changes
+    function onFacilityChange() {
+      selectedCheck = null;
+      checkSearch.value = '';
+      selectedCheckEl.classList.add('hide');
+      
+      if (facilitySelect.value) {
+        enableCheckSearch();
+      } else {
+        disableCheckSearch();
+      }
+      
+      validateForm();
+    }
+
+    function resetForm() {
+      selectedCheck = null;
+      selectedUsers = [];
+      facilities = [];
+      checkSearch.value = '';
+      userSearch.value = '';
+      selectedCheckEl.classList.add('hide');
+      userTags.innerHTML = '';
+      facilitySelect.innerHTML = '<option value="">Select Organization First</option>';
+      facilitySelect.disabled = true;
+      hideAllDropdowns();
+      validateForm();
+    }
+
+    function disableAll() {
+      facilitySelect.disabled = true;
+      checkSearch.disabled = true;
+      userSearch.disabled = true;
+      facilitySelect.innerHTML = '<option value="">Select Organization First</option>';
+      checkSearch.placeholder = 'Select facility first...';
+      userSearch.placeholder = 'Select organization first...';
+    }
+
+    function enableUserSearch() {
+      userSearch.disabled = false;
+      userSearch.placeholder = 'Search for users...';
+    }
+
+    function enableCheckSearch() {
+      checkSearch.disabled = false;
+      checkSearch.placeholder = 'Search for check...';
+    }
+
+    function disableCheckSearch() {
+      checkSearch.disabled = true;
+      checkSearch.placeholder = 'Select facility first...';
+    }
+
+    function hideAllDropdowns() {
+      checkDropdown.style.display = 'none';
+      userDropdown.style.display = 'none';
+    }
+
+    // Load facilities for the organization
+    async function loadFacilities() {
+      if (!selectedOrgUrl) return;
+
+      facilitySelect.innerHTML = '<option value="">Loading...</option>';
+      facilitySelect.disabled = true;
+
+      try {
+        const response = await fetch(selectedOrgUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            query: `
+              query {
+                facilities {
+                  nodes {
+                    id
+                    name
+                  }
+                }
+              }`
+          })
+        });
+
+        if (!response.ok) {
+          throw new Error('Failed to fetch facilities: ' + response.status);
+        }
+
+        const data = await response.json();
+        if (data.errors) {
+          throw new Error('GraphQL errors: ' + data.errors.map(e => e.message).join(', '));
+        }
+
+        facilities = data.data.facilities.nodes || [];
+        populateFacilityDropdown();
+
+      } catch (error) {
+        facilitySelect.innerHTML = '<option value="">Error loading facilities</option>';
+        console.error('Error loading facilities:', error);
+      }
+    }
+
+    function populateFacilityDropdown() {
+      facilitySelect.innerHTML = '<option value="">Select Facility</option>';
+      
+      facilities
+        .sort((a, b) => a.name.localeCompare(b.name))
+        .forEach(facility => {
+          facilitySelect.appendChild(new Option(facility.name, facility.id));
+        });
+
+      facilitySelect.disabled = false;
+    }
+
+    // Search checks using facilityChecks query
+    async function searchChecks() {
+      const query = checkSearch.value.trim();
+      const selectedFacilityId = facilitySelect.value;
+      
+      if (!query || !selectedOrgUrl || !selectedFacilityId) {
+        checkDropdown.style.display = 'none';
+        return;
+      }
+
+      try {
+        const response = await fetch(selectedOrgUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            query: `
+              query($filter: FacilityCheckFilter) {
+                facilityChecks(filter: $filter) {
+                  nodes {
+                    id
+                    facilityId
+                    checkId
+                    facility {
+                      name
+                    }
+                    check {
+                      name
+                    }
+                    createdAt
+                  }
+                }
+              }`,
+            variables: {
+              filter: {
+                facilityId: { equalTo: parseInt(selectedFacilityId) }
+              }
+            }
+          })
+        });
+
+        const data = await response.json();
+        const facilityChecks = data.data.facilityChecks.nodes || [];
+        
+        // Filter checks by name search
+        const filteredChecks = facilityChecks.filter(fc => 
+          fc.check.name.toLowerCase().includes(query.toLowerCase())
+        );
+        
+        displayCheckResults(filteredChecks);
+      } catch (error) {
+        console.error('Error searching checks:', error);
+      }
+    }
+
+    function displayCheckResults(facilityChecks) {
+      checkDropdown.innerHTML = '';
+      if (facilityChecks.length === 0) {
+        checkDropdown.innerHTML = '<div class="typeahead-item">No checks found</div>';
+      } else {
+        facilityChecks.forEach(fc => {
+          const div = document.createElement('div');
+          div.className = 'typeahead-item';
+          div.innerHTML = `<strong>${fc.check.name}</strong><br><small>Check ID: ${fc.checkId} | Facility: ${fc.facility.name}</small>`;
+          div.addEventListener('click', () => selectCheck(fc));
+          checkDropdown.appendChild(div);
+        });
+      }
+      checkDropdown.style.display = 'block';
+    }
+
+    function selectCheck(facilityCheck) {
+      selectedCheck = facilityCheck;
+      checkSearch.value = facilityCheck.check.name;
+      selectedCheckEl.textContent = `Selected: ${facilityCheck.check.name} (Check ID: ${facilityCheck.checkId})`;
+      selectedCheckEl.classList.remove('hide');
+      checkDropdown.style.display = 'none';
+      validateForm();
+    }
+
+    // Search users with dual firstName/lastName queries
+    async function searchUsers() {
+      const query = userSearch.value.trim();
+      if (!query || !selectedOrgUrl) {
+        userDropdown.style.display = 'none';
+        return;
+      }
+
+      try {
+        // Run two queries in parallel - one for firstName, one for lastName
+        const firstNamePromise = fetch(selectedOrgUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            query: `
+              query($filter: UserFilter) {
+                users(filter: $filter) {
+                  nodes {
+                    lastName
+                    firstName
+                    id
+                  }
+                }
+              }`,
+            variables: {
+              filter: {
+                firstName: { includesInsensitive: query }
+              }
+            }
+          })
+        });
+
+        const lastNamePromise = fetch(selectedOrgUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            query: `
+              query($filter: UserFilter) {
+                users(filter: $filter) {
+                  nodes {
+                    lastName
+                    firstName
+                    id
+                  }
+                }
+              }`,
+            variables: {
+              filter: {
+                lastName: { includesInsensitive: query }
+              }
+            }
+          })
+        });
+
+        const [firstNameResponse, lastNameResponse] = await Promise.all([
+          firstNamePromise,
+          lastNamePromise
+        ]);
+
+        const firstNameData = await firstNameResponse.json();
+        const lastNameData = await lastNameResponse.json();
+
+        // Combine and deduplicate results
+        const allUsers = [
+          ...(firstNameData.data.users.nodes || []),
+          ...(lastNameData.data.users.nodes || [])
+        ];
+
+        const uniqueUsers = allUsers.filter((user, index, self) => 
+          index === self.findIndex(u => u.id === user.id)
+        );
+
+        displayUserResults(uniqueUsers);
+      } catch (error) {
+        console.error('Error searching users:', error);
+      }
+    }
+
+    function displayUserResults(users) {
+      userDropdown.innerHTML = '';
+      if (users.length === 0) {
+        userDropdown.innerHTML = '<div class="typeahead-item">No users found</div>';
+      } else {
+        users.forEach(user => {
+          // Skip if already selected
+          if (selectedUsers.find(u => u.id === user.id)) return;
+          
+          const div = document.createElement('div');
+          div.className = 'typeahead-item';
+          div.innerHTML = `<strong>${user.firstName} ${user.lastName}</strong><br><small>ID: ${user.id}</small>`;
+          div.addEventListener('click', () => addUser(user));
+          userDropdown.appendChild(div);
+        });
+      }
+      userDropdown.style.display = 'block';
+    }
+
+    function addUser(user) {
+      selectedUsers.push(user);
+      userSearch.value = '';
+      userDropdown.style.display = 'none';
+      renderUserTags();
+      validateForm();
+    }
+
+    function renderUserTags() {
+      userTags.innerHTML = selectedUsers.map(user => `
+        <div class="user-tag">
+          ${user.firstName} ${user.lastName}
+          <span class="remove" onclick="removeUser('${user.id}')">&times;</span>
+        </div>
+      `).join('');
+    }
+
+    window.removeUser = function(userId) {
+      selectedUsers = selectedUsers.filter(u => u.id !== userId);
+      renderUserTags();
+      validateForm();
+    };
+
+    // Validate form
+    function validateForm() {
+      const isValid = selectedCheck && selectedUsers.length > 0;
+      submitBtn.disabled = !isValid;
+    }
+
+    // Assign users to check
+    async function assignUsersToCheck() {
+      if (!selectedCheck || selectedUsers.length === 0) {
+        showError('Please select check and at least one user');
+        return;
+      }
+
+      // Debug: log the selected users to check if IDs are present
+      console.log('Selected users:', selectedUsers);
+      console.log('Selected check:', selectedCheck);
+
+      hideMessages();
+      showLoading();
+      submitBtn.disabled = true;
+
+      try {
+        // Create facility check user assignments for each user
+        const promises = selectedUsers.map(user => {
+          console.log('Processing user:', user, 'User ID:', user.id);
+          
+          return fetch(selectedOrgUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              query: `
+                mutation($input: UpsertFacilityCheckUserInput!) {
+                  upsertFacilityCheckUser(input: $input) {
+                    clientMutationId
+                  }
+                }`,
+              variables: {
+                input: {
+                  facilityCheckUser: {
+                    userId: user.id, // Keep as string, don't parse as int
+                    facilityCheckId: parseInt(selectedCheck.id) // Use the facilityCheck id, not checkId
+                  }
+                }
+              }
+            })
+          });
+        });
+
+        const responses = await Promise.all(promises);
+        
+        // Check all responses
+        for (const response of responses) {
+          if (!response.ok) {
+            throw new Error('Failed to assign user to check: ' + response.status);
+          }
+          const data = await response.json();
+          if (data.errors) {
+            throw new Error('GraphQL errors: ' + data.errors.map(e => e.message).join(', '));
+          }
+        }
+
+        hideLoading();
+        showSuccess(`Successfully assigned ${selectedUsers.length} user(s) to check!`);
+        
+        // Reset form
+        resetForm();
+
+      } catch (error) {
+        hideLoading();
+        showError('Failed to assign users to check: ' + error.message);
+        console.error('Assignment error:', error);
+        validateForm();
+      }
+    }
+
+    // Utility functions
+    function debounce(func, wait) {
+      let timeout;
+      return function executedFunction(...args) {
+        const later = () => {
+          clearTimeout(timeout);
+          func(...args);
+        };
+        clearTimeout(timeout);
+        timeout = setTimeout(later, wait);
+      };
+    }
+
+    function showLoading() {
+      loadingEl.classList.remove('hide');
+    }
+
+    function hideLoading() {
+      loadingEl.classList.add('hide');
+    }
+
+    function showError(message) {
+      errorEl.textContent = message;
+      errorEl.classList.remove('hide');
+    }
+
+    function showSuccess(message) {
+      successEl.textContent = message;
+      successEl.classList.remove('hide');
+    }
+
+    function hideMessages() {
+      loadingEl.classList.add('hide');
+      errorEl.classList.add('hide');
+      successEl.classList.add('hide');
+    }
+
+    // Initialize
+    disableAll();
+
+  })();
+  </script>
+</body>
+</html>
